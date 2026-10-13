@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>リアル国ガチャ - サバイバルRPG</title>
+    <!-- Leaflet.js (世界地図ライブラリ) のCDN読込 -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --card-bg: #1e293b;
+            --accent-cyan: #06b6d4;
+            --accent-red: #ef4444;
+            --text-main: #f8fafc;
+            --text-sub: #94a3b8;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+        }
+
+        .container {
+            max-width: 800px;
+            width: 100%;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        h1 { color: var(--accent-cyan); margin-bottom: 5px; font-size: 1.6rem; }
+        p.subtitle { color: var(--text-sub); font-size: 0.85rem; margin: 0; }
+
+        .btn-group {
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+            margin: 20px 0;
+        }
+
+        button {
+            border: none;
+            padding: 14px 28px;
+            font-size: 1rem;
+            font-weight: bold;
+            border-radius: 30px;
+            cursor: pointer;
+            color: #fff;
+            transition: transform 0.1s;
+        }
+        button:active { transform: scale(0.97); }
+        .btn-gacha { background-color: var(--accent-red); box-shadow: 0 4px 14px rgba(239, 68, 68, 0.4); }
+
+        /* 地図のスタイル */
+        #map {
+            height: 250px;
+            width: 100%;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            border: 1px solid #334155;
+            z-index: 1;
+        }
+
+        .card {
+            background-color: var(--card-bg);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+            border: 1px solid #334155;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #334155;
+            padding-bottom: 10px;
+            margin-bottom: 12px;
+        }
+
+        .country-name { font-size: 1.3rem; font-weight: bold; }
+        .rank-badge { font-size: 1.1rem; font-weight: 800; padding: 4px 10px; border-radius: 6px; }
+
+        .SSS { background: #fef08a; color: #854d0e; }
+        .SS  { background: #fbcfe8; color: #9d174d; }
+        .S   { background: #cffafe; color: #155e75; }
+        .A   { background: #bbf7d0; color: #166534; }
+        .B   { background: #e2e8f0; color: #334155; }
+        .C   { background: #fed7aa; color: #9a3412; }
+        .D   { background: #fecaca; color: #991b1b; }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+            margin-bottom: 15px;
+        }
+        .stat-box { background: #0f172a; padding: 8px; border-radius: 6px; text-align: center; }
+        .stat-label { font-size: 0.7rem; color: var(--text-sub); }
+        .stat-val { font-size: 1rem; font-weight: bold; color: var(--accent-cyan); margin-top: 2px; }
+
+        .section-title { font-size: 0.9rem; color: #cbd5e1; margin: 12px 0 4px 0; font-weight: bold; }
+        .info-box { background: #0f172a; padding: 10px; border-radius: 6px; font-size: 0.85rem; line-height: 1.5; color: #e2e8f0; }
+        
+        .rpg-log {
+            background: #090d16;
+            border-left: 4px solid var(--accent-cyan);
+            padding: 12px;
+            border-radius: 4px;
+            margin-top: 12px;
+            font-size: 0.88rem;
+            line-height: 1.6;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <header>
+        <h1>🌍 リアル国ガチャ・サバイバルRPG 🎰</h1>
+        <p class="subtitle">出生数確率による運命の地と、そこで待ち受ける人生の物語</p>
+    </header>
+
+    <!-- 世界地図の表示エリア -->
+    <div id="map"></div>
+
+    <div class="btn-group">
+        <button class="btn-gacha" onclick="playGacha()">運命のガチャを回す</button>
+    </div>
+
+    <div id="result-area"></div>
+</div>
+
+<script>
+    // 世界地図の初期化
+    let map = L.map('map').setView([20, 0], 25);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
+    let currentMarker = null;
+
+    // 国データ（座標、ステータス、イベントプール付き）
+    const countries = [
+        {
+            name: "スイス 🇨🇭", weight: 0.06, rank: "SSS", lat: 46.8182, lng: 8.2275, zoom: 6,
+            hp: 98, str: 95, mp: 92,
+            crime: "【極めて安全】夜間単独歩行も完全に安全。主なリスクは高度な金融・ネット詐欺。",
+            gov: "【世界最高峰の統治力】警察・行政の汚職は皆無。完璧なセーフティネット。",
+            edu_job: "デュアル教育を経て製薬・金融等のハイテク専門職へ（平均年収1000万超）。",
+            events: [
+                "【幼少期】豊かな自然環境と多言語教育（独・仏・英）に囲まれ、高度な基礎教養を身につけて育つ。",
+                "【青年期】15歳での進路選択で職業訓練ルートを選択。若手から高い給与と社会的信用を得る。",
+                "【転機】アルプスの麓でクオリティ・オブ・ライフを極めた安定したキャリアと生活を築く。"
+            ]
+        },
+        {
+            name: "日本 🇯🇵", weight: 0.53, rank: "SS", lat: 36.2048, lng: 138.2529, zoom: 5,
+            hp: 98, str: 62, mp: 88,
+            crime: "【鉄壁の治安】銃器ゼロ。夜間も安全。特殊詐欺やSNSトラブルに注意。",
+            gov: "【高機能・低腐敗】交番と国民皆保険制度が機能。医療アクセスは世界最高水準。",
+            edu_job: "均質教育と新卒一括採用。大手・公務員で安定するが賃金は伸び悩み。",
+            events: [
+                "【幼少期】安全な街並みの中、近所の友達と放課後遅くまで遊びながら義務教育を受ける。",
+                "【青年期】過酷な受験戦争を乗り越えて大学を卒業し、日系の安定企業へ就職する。",
+                "【転機】終身雇用と手厚い国民皆保険に守られる一方、副業や自己投資で自身の「稼ぐ力」を模索する。"
+            ]
+        },
+        {
+            name: "アメリカ 🇺🇸", weight: 2.70, rank: "S", lat: 37.0902, lng: -95.7129, zoom: 3,
+            hp: 68, str: 96, mp: 85,
+            crime: "【銃社会・格差】居住エリアにより治安が激変。低所得地区では強盗や銃撃戦のリスク。",
+            gov: "【自己責任社会】警察対応は地域依存。無保険時の高額医療費が最大の脅威。",
+            edu_job: "名門大卒はGAFAM等で巨額報酬。低層はギグワーカー等で不安定な労働。",
+            events: [
+                "【幼少期】広大な郊外の住宅街で育つ。パブリック・スクールの教育格差を肌で感じる。",
+                "【青年期】数千万円の学生ローンを背負いながらも、IT企業で一獲千金を狙い猛烈に働く。",
+                "【転機】実力主義の荒波のなか、巨大な富を掴むか、一転して医療費のトラブルに直面するか分かれる激動の人生。"
+            ]
+        },
+        {
+            name: "中国 🇨🇳", weight: 6.60, rank: "A", lat: 35.8617, lng: 104.1954, zoom: 3,
+            hp: 78, str: 75, mp: 80,
+            crime: "【ハイテク監視】街頭の物理犯罪は監視カメラで激減。通信詐欺や政治的監視がリスク。",
+            gov: "【超高効率行政】スマホ一元化で利便性最高。企業の突然の規制など政治リスクあり。",
+            edu_job: "超過酷な受験（高考）を経て巨大ITやEV産業のハイテク職へ。長時間労働（996）。",
+            events: [
+                "【幼少期】デジタル化が極まった都市で、幼い頃からスマホ決済やAIインフラに囲まれて育つ。",
+                "【青年期】過酷な「高考（全国統一試験）」を戦い抜き、トップクラスの大学に進学してデジタル業界へ飛び込む。",
+                "【転機】「996（朝9時〜夜9時・週6日）」の激しい競争社会のなか、急速に成長する経済の恩恵を最大化する。"
+            ]
+        },
+        {
+            name: "インド 🇮🇳", weight: 17.50, rank: "B", lat: 20.5937, lng: 78.9629, zoom: 4,
+            hp: 60, str: 50, mp: 65,
+            crime: "【格差と暴力リスク】都市部の夜間や女性の安全性に課題。宗教間の衝突や詐欺が存在。",
+            gov: "【官僚主義と軽度腐敗】手続きが複雑。警察への心付け（賄賂）が蔓延し支援は届きにくい。",
+            edu_job: "IIT等のエリートはシリコンバレーへ。大半はインフォーマル経済（露天商・日雇い）。",
+            events: [
+                "【幼少期】活気あふれるカオスな街で育つ。教育熱心な家庭でITや英語の学習に望みをかける。",
+                "【青年期】激しい競争のなか、オンラインや独学も駆使してプログラミングスキルを習得する。",
+                "【転機】国内の巨大市場で起業するか、あるいはグローバルIT企業のエンジニアとして人生のジャンプアップを果たす。"
+            ]
+        },
+        {
+            name: "ナイジェリア 🇳🇬", weight: 5.80, rank: "C", hp: 40, str: 35, mp: 40,
+            crime: "【誘拐・ギャングリスク】武装勢力のテロや身代金目的の誘拐、サイバー詐欺集団が横行。",
+            gov: "【警察の機能不全】警察が市民を守らず逆に賄賂を要求。自家発電が不可欠なインフラ未整備。",
+            edu_job: "教育崩壊と高失業率。多くは路上での物売りや日雇い、違法ビジネスに直面。",
+            events: [
+                "【幼少期】電力供給が不安定な中、家族や近隣コミュニティの支え合いで日々の生活をサバイバルする。",
+                "【青年期】大学のストライキが頻発する環境で、スマホを駆使したフィンテックや独学のスキルで活路を探す。",
+                "【転機】国内での困難を突破するか、わずかなチャンスを頼りに国外への移住（Japa）を決意する。"
+            ]
+        },
+        {
+            name: "コンゴ民主共和国 🇨🇩", weight: 3.10, rank: "D", lat: -4.0383, lng: 21.7587, zoom: 4,
+            hp: 25, str: 20, mp: 25,
+            crime: "【内戦・略奪のナイトメア】東部の武装勢力や略奪、少年兵強制徴用など命の危険が日常。",
+            gov: "【統治崩壊】中央政府の権力は及ばず、軍自身が略奪側に回る。公的支援は皆無。",
+            edu_job: "学校機能せず。子どもたちはコバルト鉱山での手掘り危険労働に強制従事。",
+            events: [
+                "【幼少期】紛争と極度の貧困のなか、教育を受けることもままならず、日々の生存そのものが試される。",
+                "【青年期】鉱山での過酷な手掘り労働や、武装勢力の脅威をかいくぐりながら命をつなぐ。",
+                "【転機】国際NGOの支援プログラムや親族の絆を頼りに、奇跡的に安全な避難ルートを探し求める過酷な旅へ。"
+            ]
+        }
+    ];
+
+    function playGacha() {
+        let rand = Math.random() * 100;
+        let cumulative = 0;
+        let selected = countries[countries.length - 1];
+
+        for (let c of countries) {
+            cumulative += c.weight;
+            if (rand <= cumulative) {
+                selected = c;
+                break;
+            }
+        }
+
+        // 地図を該当国の位置へ移動
+        if (currentMarker) {
+            map.removeLayer(currentMarker);
+        }
+        map.setView([selected.lat, selected.lng], selected.zoom);
+        currentMarker = L.marker([selected.lat, selected.lng]).addTo(map)
+            .bindPopup(`<b>${selected.name}</b><br>排出率: ${selected.weight}%`)
+            .openPopup();
+
+        // RPG風イベントのランダム選択
+        let eventText = selected.events[Math.floor(Math.random() * selected.events.length)];
+
+        // 画面描画
+        let html = `
+            <div class="card">
+                <div class="card-header">
+                    <span class="country-name">${selected.name}</span>
+                    <span class="rank-badge ${selected.rank}">RANK: ${selected.rank}</span>
+                </div>
+
+                <div style="font-size: 0.8rem; color: var(--text-sub); margin-bottom: 10px;">
+                    年間出生数シェア排出確率: <strong>${selected.weight}%</strong>
+                </div>
+
+                <div class="stats-grid">
+                    <div class="stat-box"><div class="stat-label">生存率 (HP)</div><div class="stat-val">${selected.hp}/100</div></div>
+                    <div class="stat-box"><div class="stat-label">経済力 (STR)</div><div class="stat-val">${selected.str}/100</div></div>
+                    <div class="stat-box"><div class="stat-label">知性 (MP)</div><div class="stat-val">${selected.mp}/100</div></div>
+                </div>
+
+                <div class="section-title">🛡️ 治安・行政のリアル</div>
+                <div class="info-box">${selected.crime}<br>${selected.gov}</div>
+
+                <div class="section-title">⚔️ テキストRPG：あなたの人生シナリオ</div>
+                <div class="rpg-log">
+                    ${eventText}
+                </div>
+            </div>
+        `;
+
+        document.getElementById("result-area").innerHTML = html;
+    }
+</script>
+
+</body>
+</html>
